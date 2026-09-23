@@ -1,0 +1,73 @@
+/**
+ * Talk to the remux gateway that ships with this package (`npx hevc-player gateway`).
+ * Browsers cannot open RTSP; the gateway turns it into HTTP MPEG-TS for the WASM player.
+ */
+
+export type CreateRemuxSessionOptions = {
+  /**
+   * Base URL of the gateway, e.g. `http://127.0.0.1:3002`.
+   * Leave empty (default) when a same-origin proxy forwards `/v1` to the gateway.
+   */
+  gatewayUrl?: string;
+  /**
+   * Skip the pre-flight FFmpeg probe. Use for multi-camera walls so each camera
+   * is not opened twice (probe + stream).
+   */
+  skipProbe?: boolean;
+};
+
+/**
+ * Register a source URL with the gateway and return the MPEG-TS play URL.
+ * Accepts RTSP, HLS, LLHLS, SRT, RTMP, and MediaMTX / OvenMediaEngine player pages.
+ */
+export async function createRemuxSession(
+  sourceUrl: string,
+  options: CreateRemuxSessionOptions = {},
+): Promise<string> {
+  if (!sourceUrl?.trim()) {
+    throw new Error("createRemuxSession needs a stream URL.");
+  }
+
+  const base = (options.gatewayUrl ?? "").replace(/\/$/, "");
+  const endpoint = `${base}/v1/sessions`;
+
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url: sourceUrl.trim(),
+        skipProbe: options.skipProbe === true,
+      }),
+    });
+  } catch {
+    throw new Error(
+      "Cannot reach the hevc-player gateway. Start it with: npx hevc-player gateway",
+    );
+  }
+
+  const result = (await response.json().catch(() => ({}))) as {
+    streamUrl?: string;
+    error?: string;
+  };
+
+  if (!response.ok || !result.streamUrl) {
+    if (!result.error && (response.status === 500 || response.status === 502)) {
+      throw new Error(
+        "Remux gateway is not reachable (proxy returned " +
+          `${response.status}). Start it with: npx hevc-player gateway ` +
+          "(or use `pnpm run dev` which starts both).",
+      );
+    }
+    throw new Error(result.error || `Remux failed (${response.status})`);
+  }
+
+  // When using a same-origin proxy, keep only path+query so playback stays same-origin.
+  if (!base) {
+    const { pathname, search } = new URL(result.streamUrl, "http://127.0.0.1");
+    return `${pathname}${search}`;
+  }
+
+  return result.streamUrl;
+}

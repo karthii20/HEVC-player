@@ -1,0 +1,74 @@
+{
+  "name": "hevc-player",
+  "version": "0.3.2",
+  "description": "H.264/H.265 WASM browser player with a standalone FFmpeg streaming gateway.",
+  "type": "module",
+  "license": "MIT",
+  "author": "",
+  "keywords": [
+    "hevc",
+    "h264",
+    "h265",
+    "h.265",
+    "wasm",
+    "video",
+    "player",
+    "mpeg-ts"
+  ],
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js",
+      "default": "./dist/react.js"
+    },
+    "./copy-assets": "./scripts/copy-assets.mjs",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "hevc-player-copy-assets": "scripts/copy-assets.mjs",
+    "hevc-player": "scripts/cli.mjs"
+  },
+  "files": [
+    "dist",
+    "scripts",
+    "wasm",
+    "COPYING.LGPLv3",
+    "LICENSE",
+    "README.md",
+    "gateway"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/build-gateway.mjs",
+    "prepack": "npm run build",
+    "pack:tarball": "npm pack",
+    "copy-assets": "node scripts/copy-assets.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@libmedia/avplayer": "^1.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "typescript": "^5.9.2"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  }
+}
