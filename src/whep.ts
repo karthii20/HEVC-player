@@ -123,6 +123,19 @@ export async function createWhepPlayer(
   }
 
   const player: HevcPlayer = {
+    isMuted: () => video.muted,
+    getVolume: () => video.volume,
+    setVolume: (volume) => {
+      if (!Number.isFinite(volume) || volume < 0 || volume > 1) throw new RangeError("Volume must be between 0 and 1.");
+      video.volume = volume;
+    },
+    setMuted: async (muted) => {
+      video.muted = muted;
+      if (!muted) {
+        try { await video.play(); }
+        catch (error) { video.muted = true; throw error; }
+      }
+    },
     destroy: async () => {
       stopTicker?.();
       await cleanup();

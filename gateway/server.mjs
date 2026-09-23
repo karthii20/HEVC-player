@@ -209,7 +209,7 @@ const server = createServer(async (request, response) => {
       sources: remux.sources,
       maxSources: MAX_SOURCES,
       sharedRemux: true,
-      codecs: ['H.264', 'H.265'],
+      codecs: ['H.264', 'H.265', 'AAC'],
       transport: 'MPEG-TS over HTTP',
     }, headers);
     return;

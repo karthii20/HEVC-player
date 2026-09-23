@@ -2,8 +2,8 @@ import { spawn } from 'node:child_process';
 import { redactStreamDiagnostics } from './stream-source.mjs';
 
 /**
- * Remux one video stream to MPEG-TS over a ReadableStream (no transcode).
- * Works for H.264 and H.265 because FFmpeg only copies the compressed bits.
+ * Copy H.264/H.265 video and normalize optional camera audio to AAC in MPEG-TS.
+ * Audio encoding happens once per shared source, never once per viewer.
  */
 export function createMpegTsRemux({
   inputArgs,
@@ -25,9 +25,18 @@ export function createMpegTsRemux({
       ...inputArgs,
       '-map',
       '0:v:0',
-      '-an',
+      '-map',
+      '0:a:0?',
       '-c:v',
       'copy',
+      '-c:a',
+      'aac',
+      '-b:a',
+      '96k',
+      '-ar',
+      '48000',
+      '-ac',
+      '2',
       '-flush_packets',
       '1',
       '-mpegts_flags',

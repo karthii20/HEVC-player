@@ -19,6 +19,12 @@ export type HevcPlayer = {
     destroy: () => Promise<void>;
     on: (event: HevcPlayerEvent, callback: () => void) => void;
     stats: () => HevcPlayerStats;
+    /** Call setMuted(false) directly from a click/tap to unlock browser audio. */
+    setMuted: (muted: boolean) => Promise<void>;
+    isMuted: () => boolean;
+    /** Playback gain from 0 to 1. Changing volume does not unmute the player. */
+    setVolume: (volume: number) => void;
+    getVolume: () => number;
 };
 export type CreateHevcPlayerOptions = {
     /** HTTP URL of an MPEG-TS or MP4 H.264 / H.265 stream. RTSP and WHEP need a media gateway. */
@@ -33,7 +39,7 @@ export type CreateHevcPlayerOptions = {
     /** Public URL of avplayer.js plus its worker chunks. Default /vendor/avplayer.js */
     scriptUrl?: string;
     /**
-     * Directory that contains h264-simd.wasm and hevc-simd.wasm.
+     * Directory containing video/audio decoders and audio processing WASM assets.
      * Default /wasm/
      */
     wasmBaseUrl?: string;
@@ -41,7 +47,12 @@ export type CreateHevcPlayerOptions = {
     wasmUrl?: string;
     /** File extension when the URL has none. Default ts for live, mp4 otherwise. */
     ext?: string;
+    /** Decode synchronized audio when present. Default true; false is video-only. */
     audio?: boolean;
+    /** Start silently for autoplay / camera grids. Default true. */
+    muted?: boolean;
+    /** Initial playback gain from 0 to 1. Default 1. */
+    volume?: number;
     onPlaying?: () => void;
     onError?: () => void;
     onEnded?: () => void;
@@ -61,6 +72,9 @@ export type LibmediaPlayer = {
     destroy: () => Promise<void>;
     on: (event: string, callback: (...args: unknown[]) => void) => void;
     getStats: () => LibmediaStats;
+    setVolume: (volume: number, force?: boolean) => void;
+    resume: () => Promise<void>;
+    isSuspended: () => boolean;
 };
 declare global {
     interface Window {

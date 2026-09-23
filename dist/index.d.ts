@@ -1,4 +1,4 @@
-export { createHevcPlayer, createStreamPlayer, H264_CODEC_ID, HEVC_CODEC_ID, DEFAULT_WASM_BASE_URL, DEFAULT_WASM_URL, } from "./create-player.js";
+export { createHevcPlayer, createStreamPlayer, H264_CODEC_ID, HEVC_CODEC_ID, AAC_CODEC_ID, DEFAULT_WASM_BASE_URL, DEFAULT_WASM_URL, } from "./create-player.js";
 export { preloadHevcPlayer, DEFAULT_SCRIPT_URL } from "./load-script.js";
 export { classifyPasteUrl, isMediaMtxViewerUrl, isOvenMediaEngineUrl, isRemuxablePasteUrl, isWebSocketSignalingUrl, mediaMtxStreamPath, toMediaMtxRtspUrl, toOvenLlHlsUrl, toWhepUrl, } from "./classify-url.js";
 export type { ClassifyPasteUrlOptions, PastePlayback } from "./classify-url.js";

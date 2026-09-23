@@ -18,6 +18,13 @@ async function exists(url) {
  * In the hevc-studio monorepo, rebuild gateway/ from stream-core + services/streaming.
  * In the standalone GitHub package, gateway/ is already committed — keep it.
  */
+// Some checkouts retain stream-core but use the committed standalone server.
+// Keep its core current even when services/streaming is absent.
+if (await exists(streamCoreSrc)) {
+  await mkdir(target, { recursive: true });
+  await cp(streamCoreSrc, new URL('core/', target), { recursive: true });
+}
+
 if (!(await exists(streamCoreSrc)) || !(await exists(streamingServer))) {
   if (!(await exists(new URL('server.mjs', target)))) {
     throw new Error(
@@ -30,7 +37,6 @@ if (!(await exists(streamCoreSrc)) || !(await exists(streamingServer))) {
 }
 
 await mkdir(target, { recursive: true });
-await cp(streamCoreSrc, new URL('core/', target), { recursive: true });
 let source = await readFile(streamingServer, 'utf8');
 source = source.replace("from 'stream-core'", "from './core/index.mjs'");
 const start = source.indexOf('const __dirname =');

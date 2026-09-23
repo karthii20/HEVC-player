@@ -6,8 +6,13 @@ import { createHevcPlayer } from "./create-player.js";
  * Drop-in React wrapper around createHevcPlayer.
  * The host page must still serve /vendor and /wasm (see copy-assets).
  */
-export function HevcPlayerView({ url, live = true, mode = "software", className, style, onPlaying, onError, onEnded, onTimeout, }) {
+export function HevcPlayerView({ url, live = true, mode = "software", audio = true, muted = true, volume = 1, onReady, className, style, onPlaying, onError, onEnded, onTimeout, }) {
     const container = useRef(null);
+    const currentPlayer = useRef(null);
+    const audioSettings = useRef({ muted, volume });
+    audioSettings.current = { muted, volume };
+    const onReadyRef = useRef(onReady);
+    onReadyRef.current = onReady;
     const onPlayingRef = useRef(onPlaying);
     const onErrorRef = useRef(onError);
     const onEndedRef = useRef(onEnded);
@@ -26,6 +31,9 @@ export function HevcPlayerView({ url, live = true, mode = "software", className,
             url,
             live,
             mode,
+            audio,
+            muted: audioSettings.current.muted,
+            volume: audioSettings.current.volume,
             onPlaying: () => onPlayingRef.current?.(),
             onError: () => onErrorRef.current?.(),
             onEnded: () => onEndedRef.current?.(),
@@ -37,6 +45,10 @@ export function HevcPlayerView({ url, live = true, mode = "software", className,
                 return;
             }
             instance = player;
+            currentPlayer.current = player;
+            player.setVolume(audioSettings.current.volume);
+            void player.setMuted(audioSettings.current.muted).catch(() => onErrorRef.current?.());
+            onReadyRef.current?.(player);
         })
             .catch(() => {
             if (!cancelled)
@@ -44,9 +56,23 @@ export function HevcPlayerView({ url, live = true, mode = "software", className,
         });
         return () => {
             cancelled = true;
+            if (currentPlayer.current === instance)
+                currentPlayer.current = null;
             void instance?.destroy();
         };
-    }, [url, live, mode]);
+    }, [url, live, mode, audio]);
+    useEffect(() => {
+        const player = currentPlayer.current;
+        if (!player)
+            return;
+        try {
+            player.setVolume(volume);
+            void player.setMuted(muted).catch(() => onErrorRef.current?.());
+        }
+        catch {
+            onErrorRef.current?.();
+        }
+    }, [muted, volume]);
     return _jsx("div", { ref: container, className: className, style: style });
 }
 //# sourceMappingURL=react.js.map

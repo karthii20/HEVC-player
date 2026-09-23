@@ -3,6 +3,7 @@ export {
   createStreamPlayer,
   H264_CODEC_ID,
   HEVC_CODEC_ID,
+  AAC_CODEC_ID,
   DEFAULT_WASM_BASE_URL,
   DEFAULT_WASM_URL,
 } from "./create-player.js";

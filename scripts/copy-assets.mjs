@@ -8,7 +8,7 @@ const require = createRequire(import.meta.url);
 const here = path.dirname(fileURLToPath(import.meta.url));
 
 /**
- * Copy the UMD player, worker chunks, LGPL license, and H.264 / H.265 WASM
+ * Copy the UMD player, worker chunks, LGPL license, and video/audio WASM
  * into a web-accessible folder (usually `public`).
  */
 export async function copyHevcPlayerAssets(destRoot = "public") {
@@ -24,9 +24,10 @@ export async function copyHevcPlayerAssets(destRoot = "public") {
   await mkdir(path.join(dest, "wasm"), { recursive: true });
   await cp(umdDir, path.join(dest, "vendor"), { recursive: true });
   await cp(license, path.join(dest, "vendor/COPYING.LGPLv3"));
-  await cp(path.join(wasmDir, "hevc-simd.wasm"), path.join(dest, "wasm/hevc-simd.wasm"));
-  await cp(path.join(wasmDir, "h264-simd.wasm"), path.join(dest, "wasm/h264-simd.wasm"));
-  console.log(`Copied H.264/H.265 player assets to ${dest}/vendor and ${dest}/wasm`);
+  for (const file of ["hevc-simd.wasm", "h264-simd.wasm", "aac-simd.wasm", "resample-simd.wasm", "stretchpitch-simd.wasm"]) {
+    await cp(path.join(wasmDir, file), path.join(dest, "wasm", file));
+  }
+  console.log(`Copied H.264/H.265 + AAC player assets to ${dest}/vendor and ${dest}/wasm`);
 }
 
 const invoked = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);

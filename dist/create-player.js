@@ -2,12 +2,14 @@ import { preloadHevcPlayer } from "./load-script.js";
 /** libmedia / FFmpeg codec ids we ship WASM for. */
 export const H264_CODEC_ID = 27;
 export const HEVC_CODEC_ID = 173;
+export const AAC_CODEC_ID = 86018;
 export const DEFAULT_WASM_BASE_URL = "/wasm/";
 /** @deprecated Use DEFAULT_WASM_BASE_URL + hevc-simd.wasm */
 export const DEFAULT_WASM_URL = "/wasm/hevc-simd.wasm";
 const DECODER_FILES = {
     [H264_CODEC_ID]: "h264-simd.wasm",
     [HEVC_CODEC_ID]: "hevc-simd.wasm",
+    [AAC_CODEC_ID]: "aac-simd.wasm",
 };
 const EVENT_MAP = {
     playing: "firstVideoRendered",
@@ -36,6 +38,10 @@ export async function createHevcPlayer(container, options) {
     const live = options.live ?? true;
     const wasmBaseUrl = options.wasmBaseUrl ?? DEFAULT_WASM_BASE_URL;
     const preferNative = mode === "auto";
+    const audio = options.audio ?? true;
+    let muted = options.muted ?? true;
+    let volume = checkedVolume(options.volume ?? 1);
+    let audioChange = 0;
     await preloadHevcPlayer(options.scriptUrl);
     if (!window.AVPlayer)
         throw new Error("AVPlayer failed to load.");
@@ -53,6 +59,10 @@ export async function createHevcPlayer(container, options) {
         jitterBufferMin: live ? 0.05 : 0.2,
         jitterBufferMax: live ? 0.35 : 1,
         getWasm: (type, codec) => {
+            if (type === "resampler")
+                return joinWasmUrl(wasmBaseUrl, "resample-simd.wasm");
+            if (type === "stretchpitcher")
+                return joinWasmUrl(wasmBaseUrl, "stretchpitch-simd.wasm");
             if (type !== "decoder") {
                 throw new Error(`Decoder resource unavailable: ${type}.`);
             }
@@ -61,7 +71,7 @@ export async function createHevcPlayer(container, options) {
                 return options.wasmUrl;
             const file = DECODER_FILES[codec];
             if (!file) {
-                throw new Error(`Unsupported video codec ${codec}. This player includes H.264 and H.265 WASM decoders only.`);
+                throw new Error(`Unsupported codec ${codec}. Bundled decoders support H.264, H.265 and AAC. Use the gateway to convert camera audio to AAC.`);
             }
             return joinWasmUrl(wasmBaseUrl, file);
         },
@@ -71,9 +81,44 @@ export async function createHevcPlayer(container, options) {
     attach(inner, "ended", options.onEnded);
     attach(inner, "timeout", options.onTimeout);
     const player = {
-        destroy: () => inner.destroy(),
+        destroy: () => { audioChange += 1; return inner.destroy(); },
         on: (event, callback) => attach(inner, event, callback),
         stats: () => readStats(inner),
+        isMuted: () => muted,
+        getVolume: () => volume,
+        setVolume: (value) => {
+            volume = checkedVolume(value);
+            inner.setVolume(muted ? 0 : volume, true);
+        },
+        setMuted: async (value) => {
+            if (!value && !audio)
+                throw new Error("Audio is disabled. Create the player with audio: true.");
+            const change = ++audioChange;
+            muted = value;
+            inner.setVolume(muted ? 0 : volume, true);
+            if (!muted) {
+                try {
+                    await inner.resume();
+                    // libmedia returns after 100 ms even if AudioContext.resume is still
+                    // pending. Allow device startup to finish before reporting a block.
+                    const deadline = Date.now() + 1500;
+                    while (inner.isSuspended() && change === audioChange && Date.now() < deadline) {
+                        await new Promise((resolve) => setTimeout(resolve, 25));
+                    }
+                    if (change !== audioChange)
+                        return;
+                    if (inner.isSuspended())
+                        throw new Error("Audio is blocked by the browser. Enable sound from a click or tap.");
+                }
+                catch (error) {
+                    if (change === audioChange) {
+                        muted = true;
+                        inner.setVolume(0, true);
+                    }
+                    throw error;
+                }
+            }
+        },
     };
     try {
         // Worker fetches cannot resolve relative URLs against the document location.
@@ -82,7 +127,8 @@ export async function createHevcPlayer(container, options) {
             ext: options.ext ?? (live ? "ts" : "mp4"),
             maxProbeDuration: live ? 1 : 2,
         });
-        await inner.play({ audio: options.audio ?? false, video: true });
+        inner.setVolume(muted ? 0 : volume, true);
+        await inner.play({ audio, video: true });
     }
     catch (error) {
         await inner.destroy();
@@ -92,6 +138,12 @@ export async function createHevcPlayer(container, options) {
 }
 /** Alias that makes multi-codec intent obvious for new callers. */
 export const createStreamPlayer = createHevcPlayer;
+function checkedVolume(volume) {
+    if (!Number.isFinite(volume) || volume < 0 || volume > 1) {
+        throw new RangeError("Volume must be between 0 and 1.");
+    }
+    return volume;
+}
 function attach(player, event, callback) {
     if (!callback)
         return;

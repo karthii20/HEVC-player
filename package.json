@@ -1,7 +1,7 @@
 {
   "name": "hevc-player",
-  "version": "0.3.2",
-  "description": "H.264/H.265 WASM browser player with a standalone FFmpeg streaming gateway.",
+  "version": "0.4.0",
+  "description": "H.264/H.265 + AAC audio/video WASM player with a shared FFmpeg streaming gateway.",
   "type": "module",
   "license": "MIT",
   "author": "",
@@ -53,7 +53,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@libmedia/avplayer": "^1.3.1"
+    "@libmedia/avplayer": "1.3.1"
   },
   "devDependencies": {
     "@types/react": "^19.3.0",
