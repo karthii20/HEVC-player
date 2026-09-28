@@ -1,0 +1,20 @@
+name: hevc-go2rtc-trial
+
+services:
+  go2rtc:
+    image: alexxit/go2rtc:1.9.14
+    ports:
+      - "127.0.0.1:1984:1984"
+    volumes:
+      - type: bind
+        source: ./go2rtc.yaml
+        target: /config/go2rtc.yaml
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./public
+        target: /trial
+        read_only: true
+        bind:
+          create_host_path: false

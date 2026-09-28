@@ -1,0 +1,16 @@
+{
+  "name": "stream-core",
+  "version": "0.1.0",
+  "description": "Shared RTSP validation, tickets, and FFmpeg remux helpers for HEVC Studio services.",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.mjs",
+    "./stream-source": "./src/stream-source.mjs",
+    "./rtsp-sessions": "./src/rtsp-sessions.mjs",
+    "./remux": "./src/remux.mjs"
+  },
+  "files": [
+    "src"
+  ]
+}

@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Direct camera playback trial</title>
+<style>
+  body { max-width: 1120px; margin: 40px auto; padding: 0 24px; font: 16px system-ui; color: #20252a; background: #f7f8fa; }
+  h1 { font-size: 26px; }
+  form { display: flex; gap: 14px; align-items: end; flex-wrap: wrap; margin: 24px 0; }
+  label { display: grid; gap: 6px; font-size: 14px; }
+  input, select, button { padding: 10px; font: inherit; }
+  button { cursor: pointer; }
+  #wall { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+  .stage { aspect-ratio: 16 / 9; background: #111; position: relative; overflow: hidden; }
+  video { width: 100%; height: 100%; }
+  #status { white-space: pre-wrap; }
+  .note { color: #535d66; line-height: 1.5; }
+</style>
+<h1>Direct camera playback trial</h1>
+<p>One go2rtc source shared by multiple viewers. This page requests media directly; it does not use the Node remux gateway.</p>
+<form id="controls">
+  <label>Configured stream name<input id="source" value="camera1" pattern="[A-Za-z0-9_-]+" required></label>
+  <label>Playback<select id="mode">
+    <option value="native">Browser video + audio</option>
+    <option value="auto">HEVC package — automatic decoder, video only</option>
+    <option value="software">HEVC package — software decoder, video only</option>
+  </select></label>
+  <label>Viewers of this stream<select id="count"><option>1</option><option>4</option></select></label>
+  <button id="start">Start</button>
+  <button id="stop" type="button">Stop</button>
+</form>
+<p class="note">Browser playback uses MP4 and needs browser-supported video and AAC audio; use each video's controls to unmute. Package playback uses MPEG-TS and provides the existing H.265 fallback, with audio disabled because this package does not yet bundle audio resources.</p>
+<p class="note">Start with one viewer. Multiple copies test sharing of one camera connection, not capacity for that many different cameras. Measure startup delay and steady-state latency against your existing WebRTC playback.</p>
+<p class="note">This local HTTP page is limited to four viewers to leave browser connections available for player assets. Use an HTTP/2 proxy for larger grids. If package startup stalls, reload the page to cancel pending loads.</p>
+<p id="status" role="status">Ready.</p>
+<div id="wall"></div>
+<script type="module">
+  import { createStreamPlayer } from './player/index.js';
+
+  const form = document.querySelector('#controls');
+  const wall = document.querySelector('#wall');
+  const status = document.querySelector('#status');
+  const start = document.querySelector('#start');
+  const cleanups = new Set();
+  let generation = 0;
+  let pendingStarts = 0;
+
+  async function stop() {
+    generation++;
+    const running = [...cleanups];
+    cleanups.clear();
+    await Promise.allSettled(running.map(cleanup => cleanup()));
+    wall.replaceChildren();
+    start.disabled = pendingStarts > 0;
+    status.textContent = pendingStarts ? 'Stop requested. Waiting for pending player startup; reload to cancel immediately.' : 'Stopped.';
+  }
+
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    start.disabled = true;
+    await stop();
+    const run = generation;
+    start.disabled = true;
+    const source = document.querySelector('#source').value.trim();
+    const mode = document.querySelector('#mode').value;
+    const count = Number(document.querySelector('#count').value);
+    const url = new URL(mode === 'native' ? '/api/stream.mp4' : '/api/stream.ts', location.origin);
+    url.searchParams.set('src', source);
+    status.textContent = `Connecting ${count} viewer(s) to ${source}…`;
+    let playing = 0;
+    let failed = false;
+    const report = message => {
+      if (run === generation) status.textContent = message;
+    };
+    const reportError = message => {
+      failed = true;
+      report(message);
+    };
+
+    await Promise.allSettled(Array.from({ length: count }, async () => {
+      const stage = document.createElement('div');
+      stage.className = 'stage';
+      wall.append(stage);
+      let reportedPlaying = false;
+      const onPlaying = () => {
+        if (reportedPlaying) return;
+        reportedPlaying = true;
+        playing++;
+        if (!failed) report(`${playing}/${count} viewer(s) playing. Check go2rtc CPU, memory and source connections separately.`);
+      };
+      if (mode === 'native') {
+        const video = document.createElement('video');
+        video.controls = true;
+        video.playsInline = true;
+        video.muted = true;
+        video.src = url.href;
+        video.addEventListener('playing', onPlaying);
+        video.addEventListener('error', () => reportError('Browser playback failed. Check the configured source and browser video/AAC support.'));
+        stage.append(video);
+        cleanups.add(() => {
+          video.pause();
+          video.removeAttribute('src');
+          video.load();
+        });
+        await video.play().catch(() => report('Use the video controls to start playback, or check the camera connection.'));
+        return;
+      }
+      pendingStarts++;
+      try {
+        const player = await createStreamPlayer(stage, {
+          url: url.href,
+          ext: 'ts',
+          live: true,
+          mode,
+          audio: false,
+          onPlaying,
+          onError: () => reportError('Package playback failed. Check source codecs and the browser console.'),
+          onTimeout: () => reportError('Package playback timed out. Check camera reachability.'),
+        });
+        if (run !== generation) await player.destroy();
+        else cleanups.add(() => player.destroy());
+      } catch (error) {
+        reportError(error instanceof Error ? error.message : 'Unable to start player.');
+      } finally {
+        pendingStarts--;
+        start.disabled = pendingStarts > 0;
+        if (run !== generation && pendingStarts === 0) status.textContent = 'Stopped.';
+      }
+    }));
+    if (run === generation) start.disabled = false;
+  });
+
+  document.querySelector('#stop').addEventListener('click', () => void stop());
+  window.addEventListener('pagehide', () => void stop());
+</script>
+</html>

@@ -1,7 +1,20 @@
-<<<<<<< HEAD
 # hevc-player
 
 Play **H.264 and H.265 / HEVC with synchronized AAC audio**. Software WebAssembly decode is the default, so playback does not depend on GPU HEVC. Optional `auto` mode tries the browser decoder first. Audio is enabled when present; playback starts muted.
+
+Version **0.5.1** adds automatic live-session recovery, a 0.5–2 second live jitter
+buffer, and a renderer that follows container resizing. Video is still copied at
+its original resolution and bitrate. These buffer bounds trade some latency for
+smoother delivery; total delay also depends on the camera and network.
+
+The package includes the player, worker chunks and all five WebAssembly
+modules in a lazily imported JavaScript payload. An ordinary package import works
+with a bundler; the built distribution also supports native browser ESM. No
+per-application codec asset copy, runtime CDN, or separate codec download is
+required. The browser loads the payload from your
+application as JavaScript and uses Blob URLs for the player, workers and WASM.
+Your application and stream still need to be served normally; this does not make
+the whole application available offline automatically.
 
 Browsers cannot open RTSP. This package ships both:
 
@@ -21,14 +34,13 @@ cd packages/hevc-player
 npm install
 npm run build
 npm pack
-# creates hevc-player-0.4.0.tgz
+# creates hevc-player-0.5.1.tgz
 ```
 
-Copy `hevc-player-0.4.0.tgz` to the other device, then:
+Copy `hevc-player-0.5.1.tgz` to the other device, then:
 
 ```bash
-npm install ./hevc-player-0.4.0.tgz
-npx hevc-player-copy-assets public
+npm install ./hevc-player-0.5.1.tgz
 ```
 
 ### Option B — npm registry (when you publish)
@@ -37,7 +49,6 @@ npx hevc-player-copy-assets public
 npm publish --access public   # from packages/hevc-player after login
 # elsewhere:
 npm install hevc-player
-npx hevc-player-copy-assets public
 ```
 
 ### Option C — git / path (monorepo or private git)
@@ -46,19 +57,10 @@ npx hevc-player-copy-assets public
 npm install github:YOUR_ORG/hevc-studio#path:packages/hevc-player
 # or locally:
 npm install /absolute/path/to/hevc-studio/packages/hevc-player
-npx hevc-player-copy-assets public
 ```
 
-`hevc-player-copy-assets` writes:
-
-- `public/vendor/avplayer.js` (+ worker chunks)
-- `public/wasm/h264-simd.wasm`
-- `public/wasm/hevc-simd.wasm`
-- `public/wasm/aac-simd.wasm`
-- `public/wasm/resample-simd.wasm`
-- `public/wasm/stretchpitch-simd.wasm`
-
-After upgrading to 0.4.0, rerun `hevc-player-copy-assets` and restart the gateway.
+After upgrading, rebuild and redeploy your application to include the new bundled
+assets. Restart the gateway if you also upgraded its package.
 
 Recommended headers (SharedArrayBuffer workers):
 
@@ -67,35 +69,40 @@ Cross-Origin-Opener-Policy: same-origin
 Cross-Origin-Embedder-Policy: require-corp
 ```
 
+If your application sets a Content Security Policy, allow Blob URLs for scripts,
+workers and WASM fetches (`script-src`, `worker-src` and `connect-src`), and allow
+WebAssembly compilation with `'wasm-unsafe-eval'` in `script-src`. Keep your
+existing application and stream origins allowed as well.
+
 ## Usage (vanilla) — live RTSP via the bundled gateway
 
 ```bash
 # Terminal A — requires FFmpeg on PATH
 npx hevc-player gateway --port 3002
 
-# Terminal B — your app (after copy-assets)
+# Terminal B — your app
 ```
 
 ```ts
 import {
-  createStreamPlayer,
+  startLiveStreamPlayer,
   preloadHevcPlayer,
   createRemuxSession,
 } from "hevc-player";
 
-await preloadHevcPlayer();
+await preloadHevcPlayer(); // optional: warm up the bundled player before use
 
-// Ask the gateway to remux any supported source URL into MPEG-TS.
-const streamUrl = await createRemuxSession("rtsp://127.0.0.1:8554/camera1", {
-  gatewayUrl: "http://127.0.0.1:3002",
-});
-
-const player = await createStreamPlayer(document.getElementById("stage"), {
-  url: streamUrl,
-  live: true,
+const player = startLiveStreamPlayer(document.getElementById("stage"), {
+  // Called again after disconnects: never reuse an expired stream ticket.
+  resolveUrl: (signal) => createRemuxSession("rtsp://127.0.0.1:8554/camera1", {
+    gatewayUrl: "http://127.0.0.1:3002",
+    signal,
+  }),
   mode: "software", // or "auto"
   audio: true,       // default: decode audio when present
   muted: true,       // default: safe startup for autoplay and camera grids
+  onStatus: (status) => console.log(status), // Connecting / Playing / Reconnecting
+  onError: (message) => console.log(message), // empty after successful recovery
 });
 
 player.stats(); // { fps, width, height, … }
@@ -103,6 +110,21 @@ await player.destroy();
 ```
 
 MediaMTX / OvenMediaEngine viewer pages also work — paste them and the gateway derives the read URL.
+
+**Upgrading an existing live integration:** replace the one-time
+`createRemuxSession` + `createStreamPlayer` calls with `startLiveStreamPlayer` and
+the `resolveUrl` callback above. Updating the package alone does not add ticket
+renewal to an existing single-attempt integration. The handle is returned
+immediately; `destroy()` cancels pending registration, playback and retries.
+Retries back off from 1 to 15 seconds. Playback with no decoded-frame progress
+for 30 seconds reconnects too. Invalid registration requests stop with `Error`.
+Keep `createStreamPlayer` / `createHevcPlayer` for recorded files or when your
+application manages retries itself.
+
+For native browser ESM without a bundler, serve the package's complete `dist/`
+directory and import its `index.js` URL in a module script. Keep the adjacent
+modules, including the embedded asset payload, alongside it. The go2rtc example
+uses this approach.
 
 ## Live audio and controls (0.4.0+)
 
@@ -145,30 +167,73 @@ For other audio codecs, use the gateway to normalize audio to AAC or opt out wit
 ## Usage (React / Next.js)
 
 ```tsx
-import { HevcPlayerView } from "hevc-player/react";
+"use client";
 
-export function Preview({ url }: { url: string }) {
-  return <HevcPlayerView url={url} live mode="software" audio muted style={{ width: "100%", height: 360 }} />;
+import { HevcPlayerView } from "hevc-player/react";
+import { createRemuxSession } from "hevc-player";
+import { useCallback } from "react";
+
+export function Preview({ rtspUrl }: { rtspUrl: string }) {
+  const resolveUrl = useCallback((signal: AbortSignal) => createRemuxSession(rtspUrl, {
+    gatewayUrl: "http://127.0.0.1:3002", signal,
+  }), [rtspUrl]);
+  return <HevcPlayerView resolveUrl={resolveUrl} live mode="software" audio muted style={{ width: "100%", height: 360 }} />;
 }
 ```
 
 The React wrapper accepts `audio`, `muted`, `volume` and `onReady(player)`.
+Use `resolveUrl` for live reconnection; a plain `url` keeps single-attempt behavior.
 Changing `muted` or `volume` does not recreate the player. Use `onReady` to keep
 the handle in a ref and call `setMuted(false)` directly from your sound button.
 
-In Next.js, copy assets in a setup script and allow the package if needed:
+In Next.js, render the wrapper from a Client Component as above. No asset-copy
+setup script is needed. If your project needs package transpilation:
 
 ```js
 // next.config.mjs
 export default { transpilePackages: ["hevc-player"] };
 ```
 
+## Optional custom asset hosting
+
+The package also retains the raw `vendor/` player files, worker chunks, WASM
+modules and third-party license. Use the copy CLI only when you want to host those
+files separately instead of using the embedded defaults:
+
+```bash
+npx hevc-player-copy-assets public
+```
+
+This writes `public/vendor/avplayer.js` with its worker chunks and license, plus
+all five modules in `public/wasm/`: `h264-simd.wasm`, `hevc-simd.wasm`,
+`aac-simd.wasm`, `resample-simd.wasm` and `stretchpitch-simd.wasm`.
+Configure both paths for custom hosting:
+
+```ts
+const player = await createStreamPlayer(container, {
+  url: streamUrl,
+  scriptUrl: "/vendor/avplayer.js",
+  wasmBaseUrl: "/wasm/",
+});
+```
+
+React accepts the same overrides:
+
+```tsx
+<HevcPlayerView url={streamUrl} scriptUrl="/vendor/avplayer.js" wasmBaseUrl="/wasm/" />
+```
+
+If you use `preloadHevcPlayer` with custom hosting, pass the same script URL:
+`await preloadHevcPlayer("/vendor/avplayer.js")`. Rerun the copy CLI when upgrading
+a deployment that uses these custom paths. Omit the overrides for the bundled
+defaults.
+
 ## Included components
 
 | Included | Not included |
 |---|---|
 | Browser H.264 + H.265 + AAC WASM player | FFmpeg executable (install separately on the gateway host) |
-| Asset copy CLI (`hevc-player-copy-assets`) | Camera credentials |
+| Optional asset copy CLI (`hevc-player-copy-assets`) | Camera credentials |
 | Remux gateway CLI (`hevc-player gateway`) | Guaranteed H.265 over WebRTC |
 | Optional MediaMTX WHEP helper | |
 
@@ -208,8 +273,9 @@ keyframe intervals or slow startup. Slow viewers disconnect at a 1 MiB byte queu
 limit (`STREAM_VIEWER_QUEUE_BYTES`); healthy viewers keep receiving video.
 
 The recent-byte bootstrap is bounded to 512 KiB and does not guarantee a complete
-keyframe. Applications should obtain a fresh session and reconnect after failures;
-the gateway does not automatically restart sources, and tickets expire after
+keyframe. `startLiveStreamPlayer` obtains a fresh session via `resolveUrl` after failures;
+single-attempt integrations must handle that themselves. The gateway does not
+automatically restart sources, and tickets expire after
 60 seconds for new requests. Direct RTSP/HLS registration skips probing; ambiguous
 player-page URLs can open temporary FFmpeg probes per registration. Sharing and
 tickets are local to a gateway process, so keep registration and playback on the
@@ -217,7 +283,6 @@ same instance when deploying multiple replicas.
 
 ```bash
 npm install hevc-player
-npx hevc-player-copy-assets public
 npx hevc-player gateway --port 3002
 ```
 
@@ -272,156 +337,3 @@ currently exposes start, destroy, events, and statistics; it does not yet expose
 pause or seek controls, so it is not a full recorded-video playback UI. The example
 opts out of audio; remove `audio: false` to play an AAC track, then unmute from a
 user gesture.
-=======
-# HEVC Studio
-
-Self-hosted **H.264 + H.265** stream checker. Paste an RTSP URL and watch it in the browser — inspired by services like [RTSP.ME](https://rtsp.me/), but open and split into three services.
-
-## Architecture
-
-```text
-Browser  →  Frontend (:3000)   UI + WASM player (hevc-player)
-         →  Backend  (:3101)   status + optional session proxy
-         →  Streaming(:3002)   FFmpeg remux (copy) → MPEG-TS
-```
-
-| Service | Role |
-|---|---|
-| `services/frontend` | Next.js UI, `hevc-player` (H.264 + H.265 WASM) |
-| `services/backend` | Control API (`/api/status`, `/api/stream` POST) |
-| `services/streaming` | Shared FFmpeg remux gateway (`/v1/sessions`, `/v1/stream`) — **1 FFmpeg per camera URL, many viewers** |
-| `packages/hevc-player` | Reusable browser player |
-| `packages/stream-core` | RTSP validation, tickets, remux + shared fan-out |
-
-Video is not transcoded: FFmpeg uses `-c:v copy`. H.264 and H.265 both remux the same way; the browser picks the matching WASM decoder. Optional camera audio is encoded to AAC once per shared source. Playback starts muted; use Enable sound to hear it.
-
-**Shared remux:** viewers of the same RTSP/HLS URL and input options share one FFmpeg
-process **within each streaming gateway process**. Fifty browsers on `camera1` →
-one remux in that gateway. Different cameras still need separate remuxes. With
-MediaMTX upstream, readers of one configured path share its camera connection.
-
-The gateway stops an unused source after 15 seconds, even if video keeps arriving.
-It closes a source after 30 seconds without output during startup or playback.
-Each viewer has a 1 MiB queue limit; a viewer that falls behind is disconnected
-without pausing the other viewers. These values are configurable below.
-
-The 512 KiB late-join buffer contains recent MPEG-TS bytes, not a complete GOP or
-a guaranteed keyframe. Startup may still wait for the camera's next keyframe.
-The Studio and `startLiveStreamPlayer` recover interrupted or stalled playback,
-registering a fresh session on every retry. Single-attempt package integrations
-must switch to this API or handle recovery themselves. Playback tickets expire after 60 seconds
-for new requests; an established stream continues beyond that expiry.
-
-Direct RTSP/HLS URLs do not trigger registration probes. Ambiguous player-page
-URLs can trigger extra, temporary FFmpeg probes on each registration. Prefer a
-direct read URL when many viewers connect at once. Across gateway replicas, sharing
-and tickets remain local: route session registration and playback to the same
-instance. Outgoing bandwidth and browser decoding still grow with viewer count.
-
-For an optional gateway alternative, see the [FFmpeg-free go2rtc trial](examples/go2rtc/README.md).
-It shares a direct RTSP source across viewers and feeds native HTTP MPEG-TS into
-the existing player, with a separate browser MP4 mode for compatible audio.
-
-### Low latency + H.265 on every browser
-
-Stock **WebRTC / WHEP cannot do both**. Browsers do not reliably decode H.265 over WebRTC, and a website cannot install a codec driver for visitors.
-
-This project uses:
-
-```text
-MediaMTX/camera RTSP  →  FFmpeg remux (copy, low-delay)  →  MPEG-TS over HTTP  →  WASM (hevc-simd)
-```
-
-The player uses a 0.5–2 second jitter buffer to tolerate uneven delivery; total delay
-also depends on camera GOP size and the network. Paste `rtsp://host:8554/<path>`
-when possible. An HTTPS MediaMTX viewer URL is auto-mapped to that RTSP form.
-
-## Run locally (three services)
-
-Node.js 22+ and FFmpeg on PATH.
-
-```bash
-cp .env.example .env   # optional camera / MediaMTX URLs
-npm ci
-npm run dev
-```
-
-Open http://127.0.0.1:3000 → paste RTSP → **Start stream**.
-
-Individual processes:
-
-```bash
-npm run dev:streaming   # :3002
-npm run dev:backend     # :3101
-npm run dev:frontend    # :3000
-```
-
-## Run with Docker
-
-```bash
-docker compose up --build -d
-```
-
-Compose publishes frontend `:3000`, backend `:3101`, streaming `:3002` on loopback. Browser-facing `NEXT_PUBLIC_*` URLs stay on `127.0.0.1` so your machine can reach the containers.
-
-## Add an RTSP stream
-
-1. Select **Add RTSP URL**.
-2. Paste `rtsp://USER:PASS@HOST:554/PATH` (or `rtsps://…`).
-3. Prefer **Software · WebAssembly** so H.265 works without GPU HEVC.
-4. Start. Decoded frames should climb for both H.264 and H.265 cameras.
-
-The backend registers a short-lived ticket with the streaming service. The player then GETs MPEG-TS from streaming — credentials never appear in the media URL.
-
-## Use the player package elsewhere
-
-```bash
-npm run pack:player
-# → packages/hevc-player/hevc-player-0.5.1.tgz
-
-# on another machine / app:
-npm install ./hevc-player-0.5.1.tgz
-```
-
-The package embeds the browser player, worker chunks, H.264/H.265/AAC decoders
-and audio processing WASM modules by default. Each application can import
-`hevc-player` directly without copying assets or downloading codecs separately
-from a CDN. The browser loads the bundled payload as part of the host
-application's JavaScript. Raw assets and the optional `hevc-player-copy-assets`
-CLI remain available for custom static hosting.
-
-See [the player README](packages/hevc-player/README.md) for React/Next usage,
-custom asset paths and CSP requirements for the default Blob URLs. The package
-also includes a standalone gateway CLI: `npx hevc-player gateway --port 3002`.
-FFmpeg must be installed separately.
-
-## Environment
-
-See `.env.example`. Important keys:
-
-- `CAMERA_RTSP_URL` / `MEDIAMTX_STREAM_URL` — optional configured sources (server-side only)
-- `NEXT_PUBLIC_API_URL` — browser → backend (default `http://127.0.0.1:3101`)
-- `NEXT_PUBLIC_STREAM_URL` — browser → streaming (default `http://127.0.0.1:3002`)
-- `ALLOWED_ORIGINS` — CORS allow-list for backend and streaming
-- `STREAM_MAX_CONNECTIONS` / `STREAM_MAX_SOURCES` — viewer / source limits per gateway (both default to 64)
-- `STREAM_SOURCE_IDLE_MS` — stop delay after the last viewer leaves (default 15000)
-- `STREAM_SOURCE_TIMEOUT_MS` — startup / output inactivity timeout (default 30000; 0 disables); allow for input analysis and the camera's keyframe interval
-- `STREAM_VIEWER_QUEUE_BYTES` — maximum MPEG-TS queue per viewer (default 1048576)
-
-Never put camera passwords in `NEXT_PUBLIC_*` variables.
-
-## Diagnose streaming
-
-```bash
-npm run diagnose
-# or: npm run diagnose -w @hevc-studio/streaming -- camera
-```
-
-## Security notes
-
-Paste-any-RTSP means the **streaming host** opens that URL (SSRF risk). Bind to localhost and put auth in front before exposing this on the public internet.
-
-## License / third party
-
-`hevc-player` wrapper is MIT. Bundled `@libmedia/avplayer` is LGPL-3.0-or-later. WASM decoders are unmodified libmedia builds. Open-source decoder code is not a patent license for H.264/H.265.
->>>>>>> 2f64cf3 (added the whole package files)

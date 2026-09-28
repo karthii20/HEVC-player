@@ -1,0 +1,15 @@
+# Copy to go2rtc.yaml. Camera credentials stay in this local, ignored file.
+api:
+  listen: ":1984"
+  static_dir: /trial
+
+# This experiment reads cameras as an RTSP client and serves HTTP TS/MP4.
+rtsp:
+  listen: ""
+webrtc:
+  listen: ""
+
+streams:
+  # Use direct rtsp:// sources; adding ffmpeg: would enable FFmpeg again.
+  # The same named stream shares its source connection across viewers.
+  camera1: "rtsp://USER:PASSWORD@CAMERA_IP:554/STREAM_PATH"

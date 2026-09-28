@@ -1,0 +1,52 @@
+services:
+  streaming:
+    build:
+      context: .
+      dockerfile: services/streaming/Dockerfile
+    ports:
+      - "127.0.0.1:3002:3002"
+    environment:
+      BIND_ADDRESS: "0.0.0.0"
+      STREAMING_PORT: "3002"
+      STREAM_PUBLIC_URL: "http://127.0.0.1:3002"
+      ALLOWED_ORIGINS: "http://127.0.0.1:3000,http://localhost:3000"
+      CAMERA_RTSP_URL: ${CAMERA_RTSP_URL:-}
+      MEDIAMTX_STREAM_URL: ${MEDIAMTX_STREAM_URL:-}
+    init: true
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: services/backend/Dockerfile
+    ports:
+      - "127.0.0.1:3101:3101"
+    environment:
+      BIND_ADDRESS: "0.0.0.0"
+      BACKEND_PORT: "3101"
+      STREAMING_URL: "http://streaming:3002"
+      ALLOWED_ORIGINS: "http://127.0.0.1:3000,http://localhost:3000"
+      CAMERA_RTSP_URL: ${CAMERA_RTSP_URL:-}
+      MEDIAMTX_STREAM_URL: ${MEDIAMTX_STREAM_URL:-}
+    depends_on:
+      - streaming
+    init: true
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: services/frontend/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: "http://127.0.0.1:3101"
+        NEXT_PUBLIC_STREAM_URL: "http://127.0.0.1:3002"
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: "http://127.0.0.1:3101"
+      NEXT_PUBLIC_STREAM_URL: "http://127.0.0.1:3002"
+    depends_on:
+      - backend
+      - streaming
+    init: true
+    restart: unless-stopped

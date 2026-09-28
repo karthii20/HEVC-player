@@ -1,4 +1,5 @@
 node_modules/
+<<<<<<< HEAD
 *.tgz
 *.log
 .DS_Store
@@ -6,3 +7,13 @@ node_modules/
 .env.*
 !.env.example
 *.tsbuildinfo
+=======
+.next/
+.env*
+!.env.example
+public/vendor/
+services/frontend/public/vendor/
+services/**/.next/
+*.tgz
+packages/hevc-player/dist/
+>>>>>>> 2f64cf3 (added the whole package files)
