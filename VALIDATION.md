@@ -1,4 +1,19 @@
-# hevc-player 0.5.1 — RTSP viewing stability (2026-09-28)
+# Last-frame retention (2026-09-29)
+
+Live reconnects retain one canvas snapshot before decoder teardown and release it
+after the replacement renderer has presented a frame. Short input gaps continue
+to use the existing renderer's last frame. Unchanged ResizeObserver notifications
+no longer resize (and clear) the drawing buffer. Stop removes retained pictures.
+
+The browser smoke test now checks real pixel data while input is paused, resumes
+on the same session, and verifies that the retained picture stays unchanged
+through reconnection and disappears after playback resumes. Unit tests cover
+failed startup, repeated interruptions, delayed presentation and Stop cleanup.
+All 94 regression tests and the package build/typecheck pass. The real-browser
+network-pause and forced-disconnect checks pass with nonblank retained pixels and
+no uncaught browser errors.
+
+## hevc-player 0.5.1 — RTSP viewing stability (2026-09-28)
 
 - Browser: generated H.264/H.265 MP4 and MPEG-TS decode with synchronized AAC.
 - Browser: resizing the viewer to 640×384 updates the canvas backing resolution.

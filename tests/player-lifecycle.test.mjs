@@ -140,14 +140,16 @@ test('resizing updates the rendering viewport and teardown is idempotent', async
   const player = await createStreamPlayer(container, { url: '/stream', signal: controller.signal });
   player.on('ended', () => ended++);
   assert.equal(observer.container, container);
-  assert.deepEqual(instances[0].sizes, [[640, 360]]);
+  assert.deepEqual(instances[0].sizes, []);
+  observer.callback();
+  assert.deepEqual(instances[0].sizes, [], 'unchanged ResizeObserver notifications must not clear the canvas');
   container.clientWidth = 1280;
   container.clientHeight = 720;
   observer.callback();
   assert.deepEqual(instances[0].sizes.at(-1), [1280, 720]);
   container.clientWidth = 0;
   observer.callback();
-  assert.equal(instances[0].sizes.length, 2, 'hidden containers must not zero the canvas');
+  assert.equal(instances[0].sizes.length, 1, 'hidden containers must not zero the canvas');
   const first = player.destroy();
   const second = player.destroy();
   assert.equal(first, second);
@@ -156,7 +158,7 @@ test('resizing updates the rendering viewport and teardown is idempotent', async
   container.clientWidth = 1920;
   observer.callback();
   assert.equal(observer.disconnected, true);
-  assert.equal(instances[0].sizes.length, 2);
+  assert.equal(instances[0].sizes.length, 1);
   assert.equal(instances[0].destroyCalls, 1);
   assert.equal(ended, 0);
   assert.equal(getEventListeners(controller.signal, 'abort').length, 0);

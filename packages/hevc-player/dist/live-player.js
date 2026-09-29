@@ -1,5 +1,6 @@
 import { createHevcPlayer } from "./create-player.js";
 import { startLivePlayback } from "./live-playback.js";
+import { createFrameHold } from "./frame-hold.js";
 const emptyStats = () => ({ fps: 0, width: 0, height: 0, dropped: 0, frames: 0, bitrate: 0 });
 /**
  * Start a live session with automatic ticket renewal, capped retry backoff and a
@@ -15,6 +16,7 @@ export function startLiveStreamPlayer(container, options) {
     let muted = options.muted ?? true;
     let volume = checkVolume(options.volume ?? 1);
     let audioChange = 0;
+    const frameHold = createFrameHold(container);
     const listeners = new Map();
     const emit = (event) => {
         if (!stopped)
@@ -32,6 +34,10 @@ export function startLiveStreamPlayer(container, options) {
             const url = await options.resolveUrl(signal);
             if (signal.aborted)
                 throw new DOMException("Playback was cancelled.", "AbortError");
+            const picture = frameHold.beginAttempt();
+            // Register before createHevcPlayer's abort listener destroys its canvas.
+            // This also covers the decoded-frame watchdog, not just error/EOF events.
+            signal.addEventListener("abort", picture.freeze, { once: true });
             return createHevcPlayer(container, {
                 ...options,
                 url,
@@ -40,6 +46,7 @@ export function startLiveStreamPlayer(container, options) {
                 muted,
                 volume,
                 onPlaying() {
+                    picture.rendered();
                     onPlaying();
                     if (stopped)
                         return;
@@ -72,6 +79,7 @@ export function startLiveStreamPlayer(container, options) {
     return {
         async destroy() {
             stopped = true;
+            frameHold.destroy();
             audioChange++;
             listeners.clear();
             await session.stop();

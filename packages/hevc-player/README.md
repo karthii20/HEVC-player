@@ -121,6 +121,13 @@ for 30 seconds reconnects too. Invalid registration requests stop with `Error`.
 Keep `createStreamPlayer` / `createHevcPlayer` for recorded files or when your
 application manages retries itself.
 
+Live playback keeps the last rendered picture during short delivery gaps.
+`startLiveStreamPlayer` also holds that picture across reconnection and ticket
+renewal, until the replacement stream renders its first frame. Failed retry
+attempts keep the same picture; `destroy()` removes it immediately. The picture
+is frozen during an outage, so use `onStatus` to indicate reconnecting in your UI.
+The React wrapper has the same behavior when using `resolveUrl`.
+
 For native browser ESM without a bundler, serve the package's complete `dist/`
 directory and import its `index.js` URL in a module script. Keep the adjacent
 modules, including the embedded asset payload, alongside it. The go2rtc example

@@ -22,7 +22,7 @@ const pendingResponses = new Set();
 const liveProcesses = new Set();
 const liveTickets = new Map();
 const liveSeconds = Number(process.env.LIVE_SOAK_SECONDS || 18);
-const disconnectMs = Number(process.env.LIVE_DISCONNECT_SECONDS || 6) * 1000;
+const disconnectMs = Number(process.env.LIVE_DISCONNECT_SECONDS || 10) * 1000;
 let registrations = 0;
 let liveConnections = 0;
 let forcedDisconnects = 0;
@@ -81,10 +81,24 @@ window.startLiveSmoke = () => {
   smoke.playing = 0;
   smoke.errors = [];
   smoke.statuses = [];
+  smoke.heldFrames = [];
   smoke.player = startLiveStreamPlayer(document.getElementById('player'), {
     resolveUrl: signal => createRemuxSession('rtsp://fixture/camera', { signal }),
     onPlaying: () => smoke.playing++,
-    onStatus: status => smoke.statuses.push(status),
+    onStatus: status => {
+      smoke.statuses.push(status);
+      if (status === 'Reconnecting') {
+        const canvas = document.querySelector('[data-hevc-held-frame]');
+        if (!canvas) { smoke.heldFrames.push(null); return; }
+        const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+        let color = 0, alpha = 0;
+        for (let i = 0; i < pixels.length; i += 4) {
+          color += pixels[i] + pixels[i + 1] + pixels[i + 2];
+          alpha += pixels[i + 3];
+        }
+        smoke.heldFrames.push({ color, alpha, width: canvas.width, height: canvas.height });
+      }
+    },
   });
 };
 window.readViewport = () => {
@@ -95,6 +109,22 @@ window.readViewport = () => {
     expectedWidth: container.clientWidth * devicePixelRatio,
     expectedHeight: container.clientHeight * devicePixelRatio,
   };
+};
+window.readPicture = () => {
+  const source = document.querySelector('#player canvas');
+  if (!source) return null;
+  const copy = document.createElement('canvas');
+  copy.width = source.width;
+  copy.height = source.height;
+  const context = copy.getContext('2d');
+  context.drawImage(source, 0, 0);
+  const pixels = context.getImageData(0, 0, copy.width, copy.height).data;
+  let color = 0, alpha = 0;
+  for (let i = 0; i < pixels.length; i += 4) {
+    color += pixels[i] + pixels[i + 1] + pixels[i + 2];
+    alpha += pixels[i + 3];
+  }
+  return { color, alpha };
 };
 window.readSmoke = () => {
   let raw;
@@ -107,6 +137,7 @@ window.readSmoke = () => {
     stats: smoke.player?.stats(),
     audioDecoded: Number(raw?.audioFrameDecodeCount || 0),
     audioRendered: Number(raw?.audioFrameRenderCount || 0),
+    videoRendered: Number(raw?.videoFrameRenderCount || 0),
     muted: smoke.player?.isMuted(),
     software: options && !options.enableWebCodecs && !options.enableHardware && !options.checkUseMSE(),
     canvas: !!document.querySelector('#player canvas'),
@@ -319,6 +350,26 @@ try {
   assert.equal(await evaluate('document.querySelectorAll("#player canvas").length'), 0, 'Cancelled startup must leave no canvas');
   await evaluate('startLiveSmoke()');
   await waitFor(async () => (await evaluate('readSmoke()')).stats.frames >= 12, 'live HEVC startup');
+  const publisher = [...liveProcesses][0];
+  publisher.stdout.pause();
+  let previousRenderCount;
+  let stableSince = Date.now();
+  await waitFor(async () => {
+    const rendered = (await evaluate('readSmoke()')).videoRendered;
+    if (rendered !== previousRenderCount) {
+      stableSince = Date.now();
+      previousRenderCount = rendered;
+    }
+    return Date.now() - stableSince >= 600;
+  }, 'network pause drains buffered frames', 6000);
+  const pausedPicture = await evaluate('readPicture()');
+  assert.ok(pausedPicture.color > 0 && pausedPicture.alpha > 0, 'Network pause must keep a visible video picture');
+  await new Promise(resolve => setTimeout(resolve, 500));
+  assert.deepEqual(await evaluate('readPicture()'), pausedPicture, 'Last rendered picture remains unchanged while input is paused');
+  assert.equal(registrations, 1, 'A short network gap must not restart the session');
+  publisher.stdout.resume();
+  await waitFor(async () => (await evaluate('readSmoke()')).videoRendered > previousRenderCount, 'incoming video resumes after network pause');
+  assert.equal(registrations, 1, 'Playback resumes on the existing session');
   const liveStarted = Date.now();
   while (Date.now() - liveStarted < liveSeconds * 1000) {
     const current = await evaluate('readSmoke()');
@@ -330,13 +381,18 @@ try {
     return current.playing >= 2 && current.stats.frames >= 24;
   }, 'recovery with a fresh ticket after the forced disconnect', 45000);
   const recovered = await evaluate('readSmoke()');
+  const heldFrames = await evaluate('smoke.heldFrames');
+  assert.ok(heldFrames.length > 0, 'Reconnect must retain the last picture');
+  assert.ok(heldFrames.every(frame => frame && frame.color > 0 && frame.alpha > 0), 'Retained picture must contain actual video pixels');
+  assert.deepEqual(heldFrames[0], heldFrames.at(-1), 'Retry startup must not replace the retained picture with a blank frame');
+  await waitFor(async () => !(await evaluate('!!document.querySelector("[data-hevc-held-frame]")')), 'remove retained picture after replacement renders');
   assert.equal(forcedDisconnects, 1);
   assert.ok(registrations >= 2, 'Recovery must register a new ticket');
   assert.ok(liveConnections >= 2, 'Recovery must open a new media connection');
   const beforeFrames = recovered.stats.frames;
   await new Promise(resolve => setTimeout(resolve, 1500));
   assert.ok((await evaluate('readSmoke()')).stats.frames > beforeFrames, 'Recovered video continues decoding');
-  const liveResult = { seconds: liveSeconds, registrations, liveConnections, forcedDisconnects, recovered };
+  const liveResult = { seconds: liveSeconds, registrations, liveConnections, forcedDisconnects, pausedPicture, heldFrames, recovered };
   await evaluate('smoke.player.destroy()', true);
   await waitFor(() => liveProcesses.size === 0, 'Stop releases live FFmpeg process');
   assert.equal(await evaluate('document.querySelectorAll("#player canvas").length'), 0, 'Stop releases live renderer');

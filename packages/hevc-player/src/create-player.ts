@@ -73,6 +73,8 @@ export async function createHevcPlayer(
   throwIfAborted(signal);
   if (!window.AVPlayer) throw new Error("AVPlayer failed to load.");
 
+  const initialWidth = container.clientWidth;
+  const initialHeight = container.clientHeight;
   const inner: LibmediaPlayer = new window.AVPlayer({
     container,
     // MSE would hand the codec to the browser; keep WASM path available for HEVC.
@@ -182,16 +184,24 @@ export async function createHevcPlayer(
     await abortable(inner.play({ audio, video: true }), signal);
     throwIfAborted(signal);
     if (typeof ResizeObserver !== "undefined") {
+      let previousWidth = initialWidth;
+      let previousHeight = initialHeight;
       const resize = () => {
         if (destroyed) return;
         const width = container.clientWidth;
         const height = container.clientHeight;
-        if (width > 0 && height > 0) inner.resize(width, height);
+        if (width > 0 && height > 0 && (width !== previousWidth || height !== previousHeight)) {
+          previousWidth = width;
+          previousHeight = height;
+          inner.resize(width, height);
+        }
       };
       // libmedia sizes its canvas at startup; CSS alone stretches that old raster.
       resizeObserver = new ResizeObserver(resize);
       resizeObserver.observe(container);
-      resize();
+      // The renderer already sized itself during play. Reapplying the same size
+      // clears its drawing buffer and can flash black while waiting for a frame.
+      resize(); // Only resize if the container actually changed during startup.
     }
   } catch (error) {
     if (signal?.aborted) {

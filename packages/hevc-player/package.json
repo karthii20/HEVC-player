@@ -1,8 +1,20 @@
 {
   "name": "hevc-player",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "H.264/H.265 + AAC audio/video WASM player with a shared FFmpeg streaming gateway.",
   "type": "module",
+  "homepage": "https://thertsp.in",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/karthii20/HEVC-player.git"
+  },
+  "demo": {
+    "url": "https://thertsp.in",
+    "repository": "git+https://github.com/karthii20/rtsp-live-stream.git"
+  },
+  "bugs": {
+    "url": "https://github.com/karthii20/HEVC-player/issues"
+  },
   "license": "MIT",
   "author": "",
   "keywords": [

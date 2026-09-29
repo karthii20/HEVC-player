@@ -1,5 +1,6 @@
 import { createHevcPlayer } from "./create-player.js";
 import { startLivePlayback } from "./live-playback.js";
+import { createFrameHold } from "./frame-hold.js";
 import type { CreateHevcPlayerOptions, HevcPlayer, HevcPlayerEvent, HevcPlayerStats } from "./types.js";
 
 export type StartLiveStreamPlayerOptions = Omit<CreateHevcPlayerOptions,
@@ -30,6 +31,7 @@ export function startLiveStreamPlayer(
   let muted = options.muted ?? true;
   let volume = checkVolume(options.volume ?? 1);
   let audioChange = 0;
+  const frameHold = createFrameHold(container);
   const listeners = new Map<HevcPlayerEvent, Set<() => void>>();
   const emit = (event: HevcPlayerEvent) => {
     if (!stopped) listeners.get(event)?.forEach((callback) => callback());
@@ -44,6 +46,10 @@ export function startLiveStreamPlayer(
     async connect({ signal, onPlaying, onInterrupted }) {
       const url = await options.resolveUrl(signal);
       if (signal.aborted) throw new DOMException("Playback was cancelled.", "AbortError");
+      const picture = frameHold.beginAttempt();
+      // Register before createHevcPlayer's abort listener destroys its canvas.
+      // This also covers the decoded-frame watchdog, not just error/EOF events.
+      signal.addEventListener("abort", picture.freeze, { once: true });
       return createHevcPlayer(container, {
         ...options,
         url,
@@ -52,6 +58,7 @@ export function startLiveStreamPlayer(
         muted,
         volume,
         onPlaying() {
+          picture.rendered();
           onPlaying();
           if (stopped) return;
           options.onPlaying?.();
@@ -80,6 +87,7 @@ export function startLiveStreamPlayer(
   return {
     async destroy() {
       stopped = true;
+      frameHold.destroy();
       audioChange++;
       listeners.clear();
       await session.stop();
