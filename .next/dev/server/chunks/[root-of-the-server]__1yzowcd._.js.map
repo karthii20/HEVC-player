@@ -1,0 +1,6 @@
+{
+  "version": 3,
+  "sources": [],
+  "sections": [
+    {"offset": {"line": 52, "column": 0}, "map": {"version":3,"sources":["file:///home/katomaran/Public/Projects/hevc-studio/app/api/status/route.ts"],"sourcesContent":["export const dynamic = 'force-dynamic';\nexport async function GET() {\n  return Response.json({cameraConfigured: Boolean(process.env.CAMERA_RTSP_URL), defaultSource: process.env.CAMERA_RTSP_URL ? 'camera' : 'demo', version: '1.1.0', transport: 'MPEG-TS over HTTP', video: 'H.265', audio: false, player: 'hevc-player'}, {headers:{'Cache-Control':'no-store'}});\n}\n"],"names":["dynamic","GET","Response","json","cameraConfigured","Boolean","process","env","CAMERA_RTSP_URL","defaultSource","version","transport","video","audio","player","headers"],"mappings":";;;;;;AAAO,MAAMA,UAAU;AAChB,eAAeC;IACpB,OAAOC,SAASC,IAAI,CAAC;QAACC,kBAAkBC,QAAQC,QAAQC,GAAG,CAACC,eAAe;QAAGC,eAAeH,QAAQC,GAAG,CAACC,eAAe,GAAG,WAAW;QAAQE,SAAS;QAASC,WAAW;QAAqBC,OAAO;QAASC,OAAO;QAAOC,QAAQ;IAAa,GAAG;QAACC,SAAQ;YAAC,iBAAgB;QAAU;IAAC;AAC7R"}}]
+}

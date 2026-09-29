@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": [],
+  "sections": [
+    {"offset": {"line": 4, "column": 0}, "map": {"version":3,"sources":["file:///home/katomaran/Public/Projects/hevc-studio/app/layout.tsx"],"sourcesContent":["import './globals.css';\nexport const metadata = { title: 'HEVC Studio', description: 'Browser H.265 streaming laboratory' };\nexport default function Layout({children}: {children: React.ReactNode}) {\n  return <html lang=\"en\"><body>{children}</body></html>;\n}\n"],"names":["metadata","title","description","Layout","children","lang"],"mappings":";;;;;;;;;AACO,MAAMA,WAAW;IAAEC,OAAO;IAAeC,aAAa;AAAqC;AACnF,SAASC,OAAO,EAACC,QAAQ,EAA8B;IACpE,qBAAO,8OAAC;QAAKC,MAAK;kBAAK,cAAA,8OAAC;sBAAMD;;;;;;;;;;;AAChC"}},
+    {"offset": {"line": 41, "column": 0}, "map": {"version":3,"sources":["file:///home/katomaran/Public/Projects/hevc-studio/node_modules/next/src/server/route-modules/app-page/vendored/rsc/react-jsx-dev-runtime.ts"],"sourcesContent":["module.exports = (\n  require('../../module.compiled') as typeof import('../../module.compiled')\n).vendored['react-rsc']!.ReactJsxDevRuntime\n"],"names":["module","exports","require","vendored","ReactJsxDevRuntime"],"mappings":"AAAAA,OAAOC,OAAO,GACZC,QAAQ,4HACRC,QAAQ,CAAC,YAAY,CAAEC,kBAAkB","ignoreList":[0]}}]
+}

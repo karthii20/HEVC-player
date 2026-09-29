@@ -1,0 +1,1 @@
+"use strict";exports.id=796,exports.ids=[796],exports.modules={796:(a,b,c)=>{c.d(b,{getBundledAssets:()=>d});function d(){throw Error("hevc-player runs in the browser.")}}};
